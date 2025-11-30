@@ -1,0 +1,602 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { BookOpen, CheckCircle, Clock, HelpCircle, ListChecks, Trophy } from "lucide-react";
+
+// Types
+type KnowledgeLevel = 'beginner' | 'intermediate' | 'advanced';
+type QuizStatus = 'not-started' | 'in-progress' | 'completed';
+type TabValue = 'learn' | 'quiz' | 'progress';
+
+interface Concept {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  beginnerExplanation: string;
+  intermediateExplanation: string;
+  advancedExplanation: string;
+  masteryLevel: number;
+  lastStudied?: Date;
+  prerequisiteIds?: string[];
+}
+
+interface Question {
+  id: string;
+  type: 'multiple-choice' | 'short-answer';
+  prompt: string;
+  options?: string[];
+  correctAnswer: string;
+  explanation: string;
+}
+
+interface Quiz {
+  id: string;
+  conceptId: string;
+  questions: Question[];
+  score: number;
+  completed: boolean;
+  userAnswers: Record<string, string>;
+}
+
+interface UserProgress {
+  conceptId: string;
+  masteryLevel: number;
+  lastStudied: Date;
+  quizScores: number[];
+}
+
+// Sample Data
+const concepts: Concept[] = [
+  {
+    id: 'intro-ai',
+    title: 'Introduction to AI',
+    category: 'Fundamentals',
+    description: 'Learn the basics of artificial intelligence',
+    beginnerExplanation: 'Artificial Intelligence (AI) refers to computer systems that can perform tasks typically requiring human intelligence. These tasks include learning, reasoning, problem-solving, understanding natural language, and perception. AI is used in many applications like virtual assistants, recommendation systems, and autonomous vehicles.',
+    intermediateExplanation: 'AI systems are built using machine learning algorithms that learn patterns from data. There are three main types of AI: Narrow AI (specialized in one task), General AI (human-level intelligence), and Super AI (surpassing human intelligence). Current systems are Narrow AI. Key techniques include supervised learning, unsupervised learning, and reinforcement learning.',
+    advancedExplanation: 'Modern AI leverages deep learning with neural networks containing multiple layers. Transformers have revolutionized natural language processing (e.g., GPT models). AI ethics is crucial, addressing bias, transparency, and accountability. Emerging areas include neurosymbolic AI combining neural networks with symbolic reasoning. The field is rapidly evolving with new architectures like diffusion models for generative AI.',
+    masteryLevel: 0,
+    prerequisiteIds: []
+  },
+  {
+    id: 'neural-nets',
+    title: 'Neural Networks',
+    category: 'Machine Learning',
+    description: 'Understand how neural networks function',
+    beginnerExplanation: 'Neural networks are computing systems inspired by biological neural networks. They consist of interconnected nodes (neurons) organized in layers. Input data passes through these layers, with each connection having a weight that adjusts as the network learns. They can learn to recognize patterns and make decisions.',
+    intermediateExplanation: 'A neural network has an input layer, hidden layers, and an output layer. During training, the network adjusts weights using backpropagation to minimize error. Activation functions like ReLU introduce non-linearity. Common architectures include feedforward networks, CNNs for images, and RNNs for sequences. Training requires large datasets and significant computation.',
+    advancedExplanation: 'Modern architectures use attention mechanisms (Transformers) and self-supervised learning. Techniques like batch normalization and dropout improve training. Neural networks can have billions of parameters (e.g., LLMs). Research focuses on efficient training (e.g., LoRA), interpretability (attention maps), and novel architectures like graph neural networks for relational data.',
+    masteryLevel: 0,
+    prerequisiteIds: ['intro-ai']
+  },
+  {
+    id: 'nlp',
+    title: 'Natural Language Processing',
+    category: 'Applications',
+    description: 'How computers understand human language',
+    beginnerExplanation: 'Natural Language Processing (NLP) helps computers understand, interpret, and generate human language. Applications include translation, sentiment analysis, chatbots, and voice assistants. Basic techniques involve tokenization (breaking text into words) and part-of-speech tagging (identifying nouns, verbs, etc.).',
+    intermediateExplanation: 'Modern NLP uses word embeddings (Word2Vec, GloVe) to represent words numerically. Sequence models like LSTMs handle text order. Transformer architectures (BERT, GPT) use attention mechanisms for context understanding. Tasks include named entity recognition, text classification, and machine translation. Pretrained models can be fine-tuned for specific applications.',
+    advancedExplanation: 'Current state-of-the-art uses large language models (LLMs) with billions of parameters. Techniques like prompt engineering and retrieval-augmented generation improve performance. Challenges include hallucination, bias mitigation, and efficient inference. Multimodal models combine text with other data types. Research explores few-shot learning and chain-of-thought prompting.',
+    masteryLevel: 0,
+    prerequisiteIds: ['intro-ai', 'neural-nets']
+  }
+];
+
+const generateQuizQuestions = (conceptId: string): Question[] => {
+  const questions: Record<string, Question[]> = {
+    'intro-ai': [
+      {
+        id: 'q1',
+        type: 'multiple-choice',
+        prompt: 'Which of these is NOT a type of AI?',
+        options: ['Narrow AI', 'General AI', 'Super AI', 'Basic AI'],
+        correctAnswer: 'Basic AI',
+        explanation: 'The three main types of AI are Narrow AI (specialized), General AI (human-level), and Super AI (beyond human). "Basic AI" is not a recognized category.'
+      },
+      {
+        id: 'q2',
+        type: 'short-answer',
+        prompt: 'What is the name of the process where AI systems learn from data?',
+        correctAnswer: 'machine learning',
+        explanation: 'Machine learning is the process where AI systems improve their performance on a task through experience (data) without being explicitly programmed.'
+      }
+    ],
+    'neural-nets': [
+      {
+        id: 'q1',
+        type: 'multiple-choice',
+        prompt: 'What is the purpose of activation functions in neural networks?',
+        options: [
+          'To introduce non-linearity',
+          'To speed up training',
+          'To reduce memory usage',
+          'To connect layers'
+        ],
+        correctAnswer: 'To introduce non-linearity',
+        explanation: 'Activation functions like ReLU introduce non-linearities to the network, allowing it to learn complex patterns.'
+      },
+      {
+        id: 'q2',
+        type: 'short-answer',
+        prompt: 'What algorithm is commonly used to train neural networks by adjusting weights?',
+        correctAnswer: 'backpropagation',
+        explanation: 'Backpropagation is the algorithm used to calculate gradients and adjust weights during neural network training.'
+      }
+    ],
+    'nlp': [
+      {
+        id: 'q1',
+        type: 'multiple-choice',
+        prompt: 'Which architecture revolutionized NLP in recent years?',
+        options: [
+          'Convolutional Neural Networks',
+          'Recurrent Neural Networks',
+          'Transformers',
+          'Decision Trees'
+        ],
+        correctAnswer: 'Transformers',
+        explanation: 'Transformer architectures, introduced in 2017, revolutionized NLP with their attention mechanisms and parallel processing capabilities.'
+      },
+      {
+        id: 'q2',
+        type: 'short-answer',
+        prompt: 'What NLP task involves identifying people, places, and organizations in text?',
+        correctAnswer: 'named entity recognition',
+        explanation: 'Named Entity Recognition (NER) is the task of identifying and classifying named entities in text into predefined categories.'
+      }
+    ]
+  };
+
+  return questions[conceptId] || [];
+};
+
+export default function PersonalizedLearningTutor() {
+  // State
+  const [selectedConceptId, setSelectedConceptId] = useState<string>(concepts[0].id);
+  const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('beginner');
+  const [activeTab, setActiveTab] = useState<TabValue>('learn');
+  const [quizStatus, setQuizStatus] = useState<QuizStatus>('not-started');
+  const [currentQuiz, setCurrentQuiz] = useState<Quiz | null>(null);
+  const [userProgress, setUserProgress] = useState<UserProgress[]>(
+    concepts.map(concept => ({
+      conceptId: concept.id,
+      masteryLevel: concept.masteryLevel,
+      lastStudied: new Date(),
+      quizScores: []
+    }))
+  );
+  const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
+
+  // Derived state
+  const selectedConcept = concepts.find(c => c.id === selectedConceptId) || concepts[0];
+  const progressForConcept = userProgress.find(p => p.conceptId === selectedConceptId);
+  const masteryLevel = progressForConcept?.masteryLevel || 0;
+
+  // Effects
+  useEffect(() => {
+    if (activeTab === 'quiz' && quizStatus === 'not-started') {
+      initializeQuiz();
+    }
+  }, [activeTab, selectedConceptId]);
+
+  // Handlers
+  const initializeQuiz = () => {
+    const questions = generateQuizQuestions(selectedConceptId);
+    setCurrentQuiz({
+      id: `quiz-${Date.now()}`,
+      conceptId: selectedConceptId,
+      questions,
+      score: 0,
+      completed: false,
+      userAnswers: {}
+    });
+    setUserAnswers({});
+    setQuizStatus('in-progress');
+  };
+
+  const handleAnswerChange = (questionId: string, answer: string) => {
+    setUserAnswers(prev => ({
+      ...prev,
+      [questionId]: answer
+    }));
+  };
+
+  const submitQuiz = () => {
+    if (!currentQuiz) return;
+
+    // Calculate score
+    let correct = 0;
+    currentQuiz.questions.forEach(question => {
+      if (userAnswers[question.id]?.toLowerCase() === question.correctAnswer.toLowerCase()) {
+        correct++;
+      }
+    });
+
+    const score = Math.round((correct / currentQuiz.questions.length) * 100);
+    const updatedQuiz = {
+      ...currentQuiz,
+      score,
+      completed: true,
+      userAnswers
+    };
+
+    // Update progress
+    const conceptProgress = userProgress.find(p => p.conceptId === selectedConceptId);
+    if (conceptProgress) {
+      const newScores = [...conceptProgress.quizScores, score];
+      const newMastery = Math.min(100, Math.max(conceptProgress.masteryLevel, Math.round(newScores.reduce((a, b) => a + b, 0) / newScores.length)));
+      
+      setUserProgress(prev =>
+        prev.map(p =>
+          p.conceptId === selectedConceptId
+            ? {
+                ...p,
+                masteryLevel: newMastery,
+                lastStudied: new Date(),
+                quizScores: newScores
+              }
+            : p
+        )
+      );
+    }
+
+    setCurrentQuiz(updatedQuiz);
+    setQuizStatus('completed');
+  };
+
+  const resetQuiz = () => {
+    setQuizStatus('not-started');
+    setCurrentQuiz(null);
+  };
+
+  const getRecommendedConcepts = () => {
+    const learnedConcepts = userProgress
+      .filter(p => p.masteryLevel > 0)
+      .map(p => p.conceptId);
+
+    return concepts.filter(concept => {
+      // If already learned, not recommended
+      if (learnedConcepts.includes(concept.id)) return false;
+      
+      // If no prerequisites or all prerequisites learned
+      return !concept.prerequisiteIds || 
+             concept.prerequisiteIds.every(pid => learnedConcepts.includes(pid));
+    });
+  };
+
+  // Render functions
+  const renderExplanation = () => {
+    let explanation = '';
+    switch (knowledgeLevel) {
+      case 'beginner':
+        explanation = selectedConcept.beginnerExplanation;
+        break;
+      case 'intermediate':
+        explanation = selectedConcept.intermediateExplanation;
+        break;
+      case 'advanced':
+        explanation = selectedConcept.advancedExplanation;
+        break;
+    }
+
+    return (
+      <div className="prose prose-sm max-w-none">
+        {explanation.split('\n').map((paragraph, i) => (
+          <p key={i} className="mb-4">{paragraph}</p>
+        ))}
+      </div>
+    );
+  };
+
+  const renderQuizQuestion = (question: Question) => {
+    if (quizStatus !== 'in-progress' && quizStatus !== 'completed') return null;
+
+    const userAnswer = userAnswers[question.id];
+    const isCorrect = quizStatus === 'completed' && 
+                     userAnswer?.toLowerCase() === question.correctAnswer.toLowerCase();
+
+    return (
+      <Card key={question.id} className="mb-4">
+        <CardHeader>
+          <CardTitle className="text-lg">{question.prompt}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {question.type === 'multiple-choice' ? (
+            <div className="space-y-2">
+              {question.options?.map((option, i) => (
+                <div key={i} className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    id={`${question.id}-${i}`}
+                    name={question.id}
+                    value={option}
+                    checked={userAnswer === option}
+                    onChange={() => handleAnswerChange(question.id, option)}
+                    disabled={quizStatus === 'completed'}
+                    className="h-4 w-4"
+                  />
+                  <label htmlFor={`${question.id}-${i}`}>{option}</label>
+                  {quizStatus === 'completed' && option === question.correctAnswer && (
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={userAnswer || ''}
+                onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+                disabled={quizStatus === 'completed'}
+                className="w-full rounded border p-2"
+              />
+              {quizStatus === 'completed' && (
+                <div className="text-sm text-muted-foreground">
+                  Correct answer: {question.correctAnswer}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+        {quizStatus === 'completed' && (
+          <CardFooter className="bg-muted/50">
+            <div className="space-y-2">
+              <div className={`font-medium ${isCorrect ? 'text-green-600' : 'text-red-600'}`}>
+                {isCorrect ? 'Correct!' : 'Incorrect'}
+              </div>
+              <div className="text-sm">{question.explanation}</div>
+            </div>
+          </CardFooter>
+        )}
+      </Card>
+    );
+  };
+
+  const renderProgress = () => {
+    const recommendedConcepts = getRecommendedConcepts();
+
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="h-5 w-5" />
+              Your Learning Progress
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {userProgress.map(progress => {
+              const concept = concepts.find(c => c.id === progress.conceptId);
+              return (
+                <div key={progress.conceptId} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{concept?.title}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {progress.masteryLevel}% mastery
+                    </span>
+                  </div>
+                  <Progress value={progress.masteryLevel} className="h-2" />
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        {recommendedConcepts.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5" />
+                Recommended Next Concepts
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              {recommendedConcepts.map(concept => (
+                <Card key={concept.id} className="cursor-pointer hover:bg-muted/50">
+                  <CardHeader onClick={() => {
+                    setSelectedConceptId(concept.id);
+                    setActiveTab('learn');
+                  }}>
+                    <CardTitle className="text-lg">{concept.title}</CardTitle>
+                    <div className="text-sm text-muted-foreground">
+                      {concept.description}
+                    </div>
+                  </CardHeader>
+                </Card>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="mx-auto max-w-6xl p-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-2xl">
+            <BookOpen className="h-6 w-6" />
+            Gen-AI Personalized Learning Tutor
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="learn">
+                <BookOpen className="mr-2 h-4 w-4" />
+                Learn
+              </TabsTrigger>
+              <TabsTrigger value="quiz">
+                <ListChecks className="mr-2 h-4 w-4" />
+                Quiz
+              </TabsTrigger>
+              <TabsTrigger value="progress">
+                <Trophy className="mr-2 h-4 w-4" />
+                Progress
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="learn" className="mt-6">
+              <div className="grid gap-6 md:grid-cols-4">
+                <div className="md:col-span-1 space-y-4">
+                  <h3 className="font-semibold">Concepts</h3>
+                  <div className="space-y-2">
+                    {concepts.map(concept => (
+                      <div
+                        key={concept.id}
+                        onClick={() => setSelectedConceptId(concept.id)}
+                        className={`p-3 rounded-lg cursor-pointer ${selectedConceptId === concept.id ? 'bg-primary/10 border border-primary/20' : 'hover:bg-muted/50'}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{concept.title}</span>
+                          {userProgress.find(p => p.conceptId === concept.id)?.masteryLevel > 0 && (
+                            <Badge variant="secondary">
+                              {userProgress.find(p => p.conceptId === concept.id)?.masteryLevel}%
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {concept.category}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="md:col-span-3 space-y-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-2xl font-bold">{selectedConcept.title}</h2>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Knowledge Level:</span>
+                        <select
+                          value={knowledgeLevel}
+                          onChange={(e) => setKnowledgeLevel(e.target.value as KnowledgeLevel)}
+                          className="rounded border p-1 text-sm"
+                        >
+                          <option value="beginner">Beginner</option>
+                          <option value="intermediate">Intermediate</option>
+                          <option value="advanced">Advanced</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">{selectedConcept.category}</Badge>
+                      {masteryLevel > 0 && (
+                        <Badge>
+                          {masteryLevel}% Mastery
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  {renderExplanation()}
+
+                  <div className="pt-4">
+                    <Button 
+                      onClick={() => setActiveTab('quiz')}
+                      className="bg-primary hover:bg-primary/90"
+                    >
+                      Test Your Knowledge
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="quiz" className="mt-6">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold">
+                    {selectedConcept.title} Quiz
+                  </h2>
+                  {quizStatus === 'completed' && currentQuiz && (
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">
+                        Score: {currentQuiz.score}%
+                      </span>
+                      <Badge variant={currentQuiz.score >= 70 ? 'default' : 'destructive'}>
+                        {currentQuiz.score >= 70 ? 'Passed' : 'Try Again'}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+
+                {quizStatus === 'not-started' && (
+                  <Card>
+                    <CardContent className="p-6 text-center">
+                      <div className="space-y-4">
+                        <HelpCircle className="mx-auto h-12 w-12 text-muted-foreground" />
+                        <h3 className="text-xl font-semibold">
+                          Ready to test your knowledge?
+                        </h3>
+                        <p className="text-muted-foreground">
+                          This quiz will assess your understanding of {selectedConcept.title}.
+                          Answer all questions to complete the quiz.
+                        </p>
+                        <Button 
+                          onClick={initializeQuiz}
+                          className="bg-primary hover:bg-primary/90"
+                        >
+                          Start Quiz
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {quizStatus === 'in-progress' && currentQuiz && (
+                  <div>
+                    {currentQuiz.questions.map(renderQuizQuestion)}
+                    <div className="flex justify-end">
+                      <Button 
+                        onClick={submitQuiz}
+                        className="bg-primary hover:bg-primary/90"
+                        disabled={Object.keys(userAnswers).length < currentQuiz.questions.length}
+                      >
+                        Submit Quiz
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {quizStatus === 'completed' && currentQuiz && (
+                  <div>
+                    {currentQuiz.questions.map(renderQuizQuestion)}
+                    <div className="flex justify-between pt-4">
+                      <Button 
+                        variant="outline"
+                        onClick={resetQuiz}
+                      >
+                        Retake Quiz
+                      </Button>
+                      <Button 
+                        onClick={() => setActiveTab('progress')}
+                        className="bg-primary hover:bg-primary/90"
+                      >
+                        View Progress
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="progress" className="mt-6">
+              {renderProgress()}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+My api key: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
